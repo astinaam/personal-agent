@@ -14,8 +14,8 @@ NEW_COLUMNS = [
         ("provider_id", "INTEGER"),
         ("model_id", "INTEGER"),
     ]),
-    ("memories", [
-        ("project_id", "INTEGER"),
+    ("skills", [
+        ("is_active", "BOOLEAN"),
     ]),
 ]
 

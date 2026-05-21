@@ -61,6 +61,12 @@ export const api = {
   messages: {
     query: (data) => request('/query', { method: 'POST', body: data })
   },
+  skills: {
+    list: () => request('/skills'),
+    create: (data) => request('/skills', { method: 'POST', body: data }),
+    update: (id, data) => request(`/skills/${id}`, { method: 'PATCH', body: data }),
+    delete: (id) => request(`/skills/${id}`, { method: 'DELETE' })
+  },
   memories: {
     list: (projectId) => request(`/memories${projectId !== undefined && projectId !== null ? `?project_id=${projectId}` : ''}`),
     create: (data) => request('/memories', { method: 'POST', body: data }),

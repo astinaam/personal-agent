@@ -9,6 +9,7 @@ from .routes_chat_mgmt import router as chat_mgmt_router
 from .routes_memory import router as memory_router
 from .routes_config import router as config_router
 from .routes_files import router as files_router
+from .routes_skills import router as skills_router
 from .routes_providers import router as providers_router
 from .routes_projects import router as projects_router
 from .telegram_bot import start_telegram
@@ -32,6 +33,7 @@ app.include_router(config_router, prefix="/api")
 app.include_router(files_router, prefix="/api")
 app.include_router(providers_router, prefix="/api")
 app.include_router(projects_router, prefix="/api")
+app.include_router(skills_router, prefix="/api")
 
 from .providers import seed_builtin_providers, migrate_user_keys
 from .migrations import run_startup_migrations

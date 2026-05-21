@@ -53,6 +53,19 @@ class Project(Base):
     chats = relationship("Chat", back_populates="project")
     memories = relationship("Memory", back_populates="project")
 
+class Skill(Base):
+    __tablename__ = "skills"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    content = Column(Text, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="skills")
+
 class User(Base):
     __tablename__ = "users"
 
@@ -74,6 +87,7 @@ class User(Base):
     memories = relationship("Memory", back_populates="user", cascade="all, delete")
     providers = relationship("Provider", back_populates="user", foreign_keys="Provider.user_id")
     projects = relationship("Project", back_populates="user", cascade="all, delete")
+    skills = relationship("Skill", back_populates="user", cascade="all, delete")
 
 class Chat(Base):
     __tablename__ = "chats"

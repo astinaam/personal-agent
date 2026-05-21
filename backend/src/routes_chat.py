@@ -6,22 +6,13 @@ from sqlalchemy import select
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from .database import get_db, async_session_maker
-from .models import Message, Memory, SystemConfig, Chat, User
+from .models import Message, Chat
 from .dependencies import get_user_from_request
-from .memory import get_relevant_memories, build_memory_context
 from .llm import stream_llm
 from .providers import resolve_model_for_request
+from .prompt_builder import build_system_prompt
 
 router = APIRouter()
-UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/app/uploads")
-CAVE_SYSTEM_PROMPT = """You are Grok, a personal AI agent. Speak in caveman style. Use short sentences. Drop articles. Be direct. No fancy words. Keep answers short but complete. Use grunts when appropriate (ug, argh). You remember things about user. You use memories to help. No markdown unless user ask. No code blocks unless user ask."""
-
-async def get_system_prompt(db: AsyncSession) -> str:
-    result = await db.execute(select(SystemConfig).where(SystemConfig.key == "system_prompt"))
-    cfg = result.scalar_one_or_none()
-    if cfg:
-        return cfg.value
-    return CAVE_SYSTEM_PROMPT
 
 @router.post("/query")
 async def query(request: Request, req: dict, db: AsyncSession = Depends(get_db)):
@@ -30,7 +21,6 @@ async def query(request: Request, req: dict, db: AsyncSession = Depends(get_db))
     chat_id = req.get("chat_id")
     provider_id = req.get("provider_id")
     model_id = req.get("model_id")
-    file_ids = req.get("files", [])
 
     if not message:
         raise HTTPException(status_code=400, detail="Message required")
@@ -39,10 +29,8 @@ async def query(request: Request, req: dict, db: AsyncSession = Depends(get_db))
     provider = resolved["provider"]
     model = resolved["model"]
     api_key = resolved["api_key"]
-    base_url = resolved["base_url"]
 
     if not api_key and provider.slug != "copilot":
-        # copilot can use env tokens; litellm providers need a key
         raise HTTPException(status_code=400, detail=f"No API key configured for {provider.name}")
 
     # Get or create chat
@@ -70,12 +58,7 @@ async def query(request: Request, req: dict, db: AsyncSession = Depends(get_db))
             chat.model_id = model.id
         await db.commit()
 
-    memories = await get_relevant_memories(db, user.id, message, project_id=chat.project_id)
-    memory_ctx = await build_memory_context(memories)
-    system_prompt = await get_system_prompt(db)
-
-    if memory_ctx:
-        system_prompt = system_prompt + "\n\n" + memory_ctx
+    system_prompt = await build_system_prompt(db, user.id, project_id=chat.project_id)
 
     messages = [{"role": "system", "content": system_prompt}]
     result = await db.execute(
@@ -90,14 +73,20 @@ async def query(request: Request, req: dict, db: AsyncSession = Depends(get_db))
         full_content = ""
         try:
             async for chunk in stream_llm(messages, provider, model, api_key):
-                data = json.loads(chunk.replace("data: ", "").strip())
-                if data.get("error"):
-                    yield f"data: {json.dumps({'error': data['error'], 'done': True})}\n\n"
-                    return
-                content = data.get("content", "")
-                if content:
-                    full_content += content
-                    yield f"data: {json.dumps({'content': content, 'done': False})}\n\n"
+                data_str = chunk.replace("data: ", "").strip()
+                if not data_str:
+                    continue
+                try:
+                    data = json.loads(data_str)
+                    if data.get("error"):
+                        yield f"data: {json.dumps({'error': data['error'], 'done': True})}\n\n"
+                        return
+                    content = data.get("content", "")
+                    if content:
+                        full_content += content
+                        yield f"data: {json.dumps({'content': content, 'done': False})}\n\n"
+                except:
+                    pass
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"
             return

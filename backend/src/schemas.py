@@ -190,5 +190,37 @@ class StreamResponse(BaseModel):
     content: str = ""
     done: bool = False
 
+class SkillCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    content: str
+
+class SkillUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    content: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class SkillResponse(BaseModel):
+    id: int
+    user_id: int
+    name: str
+    description: Optional[str] = None
+    content: str
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class SkillListResponse(BaseModel):
+    items: List[SkillResponse]
+
+class PromptDesign(BaseModel):
+    base_prompt: str = ""
+    include_memories: bool = True
+    include_project_memories: bool = True
+    skill_ids: List[int] = []
+
 class SystemPromptUpdate(BaseModel):
     prompt: str

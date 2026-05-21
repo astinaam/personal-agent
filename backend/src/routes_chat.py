@@ -1,3 +1,4 @@
+"""Chat streaming routes — uses LiteLLM / Copilot SDK via providers."""
 import os
 import json
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -5,10 +6,11 @@ from sqlalchemy import select
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from .database import get_db, async_session_maker
-from .models import Message, Memory, SystemConfig, Chat
+from .models import Message, Memory, SystemConfig, Chat, User
 from .dependencies import get_user_from_request
 from .memory import get_relevant_memories, build_memory_context
-from .llm import get_provider
+from .llm import stream_llm
+from .providers import resolve_model_for_request
 
 router = APIRouter()
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/app/uploads")
@@ -21,44 +23,36 @@ async def get_system_prompt(db: AsyncSession) -> str:
         return cfg.value
     return CAVE_SYSTEM_PROMPT
 
-@router.get("/models")
-async def list_models():
-    return {
-        "models": [
-            {"id": "openai/gpt-4o", "name": "GPT-4o", "provider": "OpenAI", "supports_vision": True},
-            {"id": "openai/gpt-4o-mini", "name": "GPT-4o Mini", "provider": "OpenAI", "supports_vision": True},
-            {"id": "anthropic/claude-sonnet-4-20250514", "name": "Claude 4 Sonnet", "provider": "Anthropic", "supports_vision": True},
-            {"id": "anthropic/claude-opus-4-20250514", "name": "Claude 4 Opus", "provider": "Anthropic", "supports_vision": True},
-            {"id": "deepseek/deepseek-chat", "name": "DeepSeek V3", "provider": "DeepSeek", "supports_vision": False},
-        ]
-    }
-
 @router.post("/query")
 async def query(request: Request, req: dict, db: AsyncSession = Depends(get_db)):
     user = await get_user_from_request(request, db)
     message = req.get("message", "")
-    model = req.get("model") or user.default_model
     chat_id = req.get("chat_id")
+    provider_id = req.get("provider_id")
+    model_id = req.get("model_id")
     file_ids = req.get("files", [])
 
     if not message:
         raise HTTPException(status_code=400, detail="Message required")
 
-    model_provider = model.split("/")[0]
-    api_key = None
-    if model_provider == "openai":
-        api_key = user.openai_api_key or os.getenv("OPENAI_API_KEY")
-    elif model_provider == "anthropic":
-        api_key = user.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
-    elif model_provider == "deepseek":
-        api_key = user.deepseek_api_key or os.getenv("DEEPSEEK_API_KEY")
+    resolved = await resolve_model_for_request(db, user, provider_id, model_id, telegram=False)
+    provider = resolved["provider"]
+    model = resolved["model"]
+    api_key = resolved["api_key"]
+    base_url = resolved["base_url"]
 
-    if not api_key:
-        raise HTTPException(status_code=400, detail=f"No API key configured for {model_provider}")
+    if not api_key and provider.slug != "copilot":
+        # copilot can use env tokens; litellm providers need a key
+        raise HTTPException(status_code=400, detail=f"No API key configured for {provider.name}")
 
     # Get or create chat
     if not chat_id:
-        chat = Chat(user_id=user.id, title=message[:40] + "..." if len(message) > 40 else message)
+        chat = Chat(
+            user_id=user.id,
+            provider_id=provider.id,
+            model_id=model.id,
+            title=message[:40] + "..." if len(message) > 40 else message
+        )
         db.add(chat)
         await db.commit()
         await db.refresh(chat)
@@ -69,6 +63,12 @@ async def query(request: Request, req: dict, db: AsyncSession = Depends(get_db))
         if not chat:
             raise HTTPException(status_code=404, detail="Chat not found")
         chat_id = chat.id
+        # update chat provider/model if changed
+        if chat.provider_id != provider.id:
+            chat.provider_id = provider.id
+        if chat.model_id != model.id:
+            chat.model_id = model.id
+        await db.commit()
 
     memories = await get_relevant_memories(db, user.id, message)
     memory_ctx = await build_memory_context(memories)
@@ -86,21 +86,15 @@ async def query(request: Request, req: dict, db: AsyncSession = Depends(get_db))
         messages.append({"role": m.role, "content": m.content})
     messages.append({"role": "user", "content": message})
 
-    provider = get_provider(model, api_key)
-
     async def stream():
         full_content = ""
         try:
-            async for chunk in provider.stream(messages, model):
-                content = ""
-                if "choices" in chunk and len(chunk["choices"]) > 0:
-                    delta = chunk["choices"][0].get("delta", {})
-                    content = delta.get("content", "")
-                elif "delta" in chunk:
-                    content = chunk["delta"].get("text", "")
-                elif "type" in chunk and chunk["type"] == "content_block_delta":
-                    content = chunk.get("delta", {}).get("text", "")
-
+            async for chunk in stream_llm(messages, provider, model, api_key):
+                data = json.loads(chunk.replace("data: ", "").strip())
+                if data.get("error"):
+                    yield f"data: {json.dumps({'error': data['error'], 'done': True})}\n\n"
+                    return
+                content = data.get("content", "")
                 if content:
                     full_content += content
                     yield f"data: {json.dumps({'content': content, 'done': False})}\n\n"
@@ -110,9 +104,9 @@ async def query(request: Request, req: dict, db: AsyncSession = Depends(get_db))
 
         # Save messages in a fresh session
         async with async_session_maker() as db_inner:
-            msg = Message(chat_id=chat_id, role="user", content=message, model_used=model)
+            msg = Message(chat_id=chat_id, role="user", content=message, model_used=model.slug)
             db_inner.add(msg)
-            resp = Message(chat_id=chat_id, role="assistant", content=full_content, model_used=model)
+            resp = Message(chat_id=chat_id, role="assistant", content=full_content, model_used=model.slug)
             db_inner.add(resp)
             await db_inner.commit()
             await db_inner.refresh(resp)

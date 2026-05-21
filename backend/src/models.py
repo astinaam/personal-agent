@@ -3,6 +3,41 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from .database import Base
 
+# Providers system (NEW)
+class Provider(Base):
+    __tablename__ = "providers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    name = Column(String, nullable=False)
+    slug = Column(String, nullable=False)
+    base_url = Column(String, nullable=True)
+    api_key = Column(String, nullable=True)
+    is_builtin = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="providers", foreign_keys=[user_id])
+    models = relationship("ProviderModel", back_populates="provider", cascade="all, delete")
+
+    __table_args__ = (
+        # unique per user; builtins (user_id=NULL) are unique by slug globally
+        # handled in application logic since partial unique indexes differ by dialect
+    )
+
+class ProviderModel(Base):
+    __tablename__ = "provider_models"
+
+    id = Column(Integer, primary_key=True, index=True)
+    provider_id = Column(Integer, ForeignKey("providers.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    slug = Column(String, nullable=False)
+    display_name = Column(String, nullable=False)
+    supports_vision = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
+
+    provider = relationship("Provider", back_populates="models")
+
 class User(Base):
     __tablename__ = "users"
 
@@ -14,16 +49,23 @@ class User(Base):
     anthropic_api_key = Column(String, nullable=True)
     deepseek_api_key = Column(String, nullable=True)
     default_model = Column(String, default="openai/gpt-4o")
+    default_provider_id = Column(Integer, ForeignKey("providers.id"), nullable=True)
+    default_model_id = Column(Integer, ForeignKey("provider_models.id"), nullable=True)
+    telegram_provider_id = Column(Integer, ForeignKey("providers.id"), nullable=True)
+    telegram_model_id = Column(Integer, ForeignKey("provider_models.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     chats = relationship("Chat", back_populates="user", cascade="all, delete")
     memories = relationship("Memory", back_populates="user", cascade="all, delete")
+    providers = relationship("Provider", back_populates="user", foreign_keys="Provider.user_id")
 
 class Chat(Base):
     __tablename__ = "chats"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    provider_id = Column(Integer, ForeignKey("providers.id"), nullable=True)
+    model_id = Column(Integer, ForeignKey("provider_models.id"), nullable=True)
     title = Column(String, default="New Chat")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

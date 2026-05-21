@@ -1,7 +1,7 @@
 # Sub-project A: LiteLLM + Provider/Model System Design
 
 **Date:** 2026-05-21
-**Scope:** Replace ad-hoc LLM providers with LiteLLM, add user-configurable provider/model system with OpenRouter included, cascading dropdowns in chat, and Telegram slash commands.
+**Scope:** Replace ad-hoc LLM providers with LiteLLM, add user-configurable provider/model system with OpenRouter and GitHub Copilot included, cascading dropdowns in chat, and Telegram slash commands.
 
 ---
 
@@ -26,6 +26,7 @@
 - `anthropic` — `https://api.anthropic.com/v1`
 - `deepseek` — `https://api.deepseek.com/v1`
 - `openrouter` — `https://openrouter.ai/api/v1`
+- `copilot` — `https://api.githubcopilot.com` (uses Copilot SDK, not LiteLLM)
 
 ### 1.2 New Table: `provider_models`
 
@@ -34,7 +35,7 @@
 | `id` | Integer | PK | |
 | `provider_id` | Integer | FK → providers.id, cascade delete | |
 | `user_id` | Integer | FK → users.id, nullable | NULL = hardcoded default models |
-| `slug` | String | not null | Model slug used by LiteLLM |
+| `slug` | String | not null | Model slug used by LiteLLM or Copilot |
 | `display_name` | String | not null | e.g. "GPT-4o" |
 | `supports_vision` | Boolean | default=False | |
 | `is_active` | Boolean | default=True | |
@@ -44,6 +45,7 @@
 - anthropic: `anthropic/claude-sonnet-4-20250514` (vision), `anthropic/claude-opus-4-20250514` (vision)
 - deepseek: `deepseek/deepseek-chat`
 - openrouter: not seeded (user can add from list, see below)
+- copilot: `gpt-4.1` (vision), `claude-sonnet-4` (vision)
 
 ### 1.3 Modified: `users`
 
@@ -72,16 +74,19 @@
 Add to `requirements.txt`:
 ```
 litellm==1.65.0
+github-copilot-sdk==0.5.0
 ```
 
 Remove: old 3 custom provider classes (keep file, refactor).
+
+**Docker/Runtime note for Copilot:** The GitHub Copilot CLI (`copilot`) must be installed in the runtime environment and authenticated. For the Docker image, add a build step that installs the CLI from https://github.com/github/copilot-cli/releases. Authentication can be done via `GITHUB_COPILOT_API_TOKEN` or `GH_TOKEN` env var. In local dev, the user must run `copilot auth login` first.
 
 ### 2.2 API Key Encryption
 
 Add API key encryption using `cryptography.fernet` with `SECRET_KEY` as base:
 ```
 from cryptography.fernet import Fernet
-import hashlib
+import base64, hashlib
 fernet = Fernet(base64.urlsafe_b64encode(hashlib.sha256(SECRET_KEY.encode()).digest()[:32].ljust(32, b'0')))
 ```
 Store encrypted, decrypt on read.
@@ -98,26 +103,14 @@ POST  /api/providers/{id}/models → add custom model to provider
 DELETE /api/providers/{id}/models/{model_id} → remove model
 GET   /api/models             → all models grouped by provider (public + user custom)
 POST  /api/models/refresh     → fetch OpenRouter models list and cache
+POST  /api/providers/{id}/test → test provider auth (Copilot: validate token; LiteLLM: test completions call)
 ```
 
-### 2.4 Modified Endpoints
+### 2.4 LLM Provider Router
 
-```
-POST /api/query
-POST /api/chats/{chat_id}/query
-```
+Two engine paths based on selected provider:
 
-Request body accepts:
-```json
-{
-  "message": "...",
-  "provider_id": 1,     // optional, fallback to user default
-  "model_id": 2,        // optional, fallback to user default
-  "files": []
-}
-```
-
-**LiteLLM integration flow:**
+**LiteLLM path** (openai, anthropic, deepseek, openrouter):
 ```
 resolve_provider_and_model(body, user)
 → get provider config (base_url, api_key decrypted)
@@ -130,6 +123,23 @@ resolve_provider_and_model(body, user)
    )
 ```
 
+**Copilot SDK path** (copilot):
+```
+resolve_provider_and_model(body, user)
+→ create CopilotClient() with githubToken from provider.api_key
+→ session = client.create_session({ model: model.slug, streaming: true })
+→ stream via session.send_and_wait() with delta events
+→ session.on(SessionEventType.ASSISTANT_MESSAGE_DELTA, ...) for streaming
+```
+
+**Important:** Copilot SDK sessions are stateful. For streaming, use a background task to run the session and emit SSE chunks to the client. Session ID can be persisted to allow resume (`client.resume_session(session_id)`), but for simplicity start with fire-and-forget per-request sessions.
+
+Copilot SDK supports:
+- BYOK mode via provider config in session create
+- Custom tools (if we add tool calling later)
+- MCP servers (future extensibility)
+- Session persistence
+
 ### 2.5 OpenRouter Model Discovery
 
 ```
@@ -139,7 +149,30 @@ POST /api/models/refresh
 → Cache for 1 hour (in-memory or Redis later)
 ```
 
-### 2.6 Migration
+### 2.6 Copilot SDK Integration Details
+
+**Authentication options (priority):**
+1. `api_key` on copilot provider record → used as `githubToken` in `CopilotClient`
+2. `COPILOT_GITHUB_TOKEN` env var
+3. `GH_TOKEN` env var
+4. CLI stored credentials (requires `copilot auth login` in container)
+
+**Model slugs for Copilot provider:**
+- `gpt-4.1`
+- `gpt-4o`
+- `claude-sonnet-4`
+- `claude-opus-4`
+
+**Copilot BYOK mode** (use own keys through Copilot runtime):
+- If user selects a Copilot model but also provides a provider config, Copilot SDK can use BYOK with a `provider` object in `SessionConfig`
+- Not required for basic Copilot usage (uses Copilot's own model access)
+
+**Error handling:**
+- If Copilot CLI not installed → 503 with message "Copilot CLI not available"
+- If not authenticated → 401 with message "GitHub Copilot not authenticated"
+- Catch SDK errors and return proper HTTP exceptions
+
+### 2.7 Migration
 
 On startup (`main.py:startup`):
 1. Seed builtins if `providers` empty
@@ -166,12 +199,14 @@ On startup (`main.py:startup`):
 - Dropdowns auto-close on mobile after selection
 - Shows active model as compact pill (e.g. "OpenAI / GPT-4o")
 - On mobile: expands to full-select modal on click
+- Copilot provider: shows GitHub icon/badge
 
 **`ProviderSettings`** (inside SettingsPanel):
 - Table/list of providers
-- Each row: name, toggle active, masked api_key input, "show/hide" eye
+- Each row: name, toggle active, masked api_key input, "show/hide" eye, "Test Auth" button
 - "Add Provider" button → modal form (name, slug, base_url, api_key)
 - OpenRouter section: "Refresh Models" button, shows count of synced models
+- Copilot row: shows GitHub status, "Test Auth" button, tooltip "Copilot requires GitHub Copilot subscription or CLI auth"
 
 **`ProviderModelList`** (sub-component of ProviderSettings):
 - List models per provider
@@ -213,8 +248,8 @@ Fallback chain: telegram prefs → user default → first builtin.
 ## 5. Implementation Order
 
 1. **DB schema** — models.py + Alembic migration
-2. **Backend core** — provider/model models, encryption, LiteLLM refactor
-3. **API routes** — CRUD for providers/models, query migration
+2. **Backend core** — provider/model models, encryption, LiteLLM refactor, Copilot SDK adapter
+3. **API routes** — CRUD for providers/models, query migration, Copilot test endpoint
 4. **OpenRouter** — model discovery endpoint
 5. **Frontend components** — SettingsPanel, ModelSelector
 6. **Mobile responsiveness** — sidebar/panel/drawer fixes
@@ -227,3 +262,4 @@ Fallback chain: telegram prefs → user default → first builtin.
 
 - Should we cache OpenRouter models in DB or in-memory? **Decision:** DB for persistence, in-memory TTL for freshness.
 - How to handle vision flag when user uploads non-image files? **Decision:** Gate visual model use by file mimetype check, allow any model for docs.
+- Copilot SDK `github-copilot-sdk` PyPI package name? **Decision:** use `github-copilot-sdk` or check latest release name at implementation time.

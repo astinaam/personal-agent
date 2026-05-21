@@ -31,6 +31,20 @@ export const api = {
     me: () => request('/auth/me'),
     settings: (data) => request('/auth/me/settings', { method: 'PATCH', body: data })
   },
+  providers: {
+    list: () => request('/providers'),
+    create: (data) => request('/providers', { method: 'POST', body: data }),
+    update: (id, data) => request(`/providers/${id}`, { method: 'PATCH', body: data }),
+    delete: (id) => request(`/providers/${id}`, { method: 'DELETE' }),
+    models: (providerId) => request(`/providers/${providerId}/models`),
+    addModel: (providerId, data) => request(`/providers/${providerId}/models`, { method: 'POST', body: data }),
+    deleteModel: (providerId, modelId) => request(`/providers/${providerId}/models/${modelId}`, { method: 'DELETE' }),
+    test: (id) => request(`/providers/${id}/test`, { method: 'POST' })
+  },
+  models: {
+    list: () => request('/models'),
+    refreshOpenRouter: () => request('/models/refresh', { method: 'POST' })
+  },
   chats: {
     list: () => request('/chats'),
     get: (id) => request(`/chats/${id}`),
@@ -49,9 +63,6 @@ export const api = {
   config: {
     getSystemPrompt: () => request('/config/system-prompt'),
     setSystemPrompt: (prompt) => request('/config/system-prompt', { method: 'POST', body: { prompt } })
-  },
-  models: {
-    list: () => request('/models')
   },
   files: {
     upload: (files) => {

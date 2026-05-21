@@ -27,6 +27,63 @@ class UserResponse(UserBase):
     class Config:
         from_attributes = True
 
+# Provider schemas
+class ProviderBase(BaseModel):
+    name: str
+    slug: str
+    base_url: Optional[str] = None
+    is_active: bool = True
+
+class ProviderCreate(ProviderBase):
+    api_key: Optional[str] = None
+
+class ProviderUpdate(BaseModel):
+    name: Optional[str] = None
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class ProviderResponse(ProviderBase):
+    id: int
+    user_id: Optional[int] = None
+    is_builtin: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class ProviderListResponse(BaseModel):
+    items: List[ProviderResponse]
+
+# Provider model schemas
+class ModelBase(BaseModel):
+    slug: str
+    display_name: str
+    supports_vision: bool = False
+    is_active: bool = True
+
+class ModelCreate(ModelBase):
+    pass
+
+class ModelUpdate(BaseModel):
+    display_name: Optional[str] = None
+    supports_vision: Optional[bool] = None
+    is_active: Optional[bool] = None
+
+class ModelResponse(ModelBase):
+    id: int
+    provider_id: int
+
+    class Config:
+        from_attributes = True
+
+class ModelsByProviderResponse(BaseModel):
+    provider: ProviderResponse
+    models: List[ModelResponse]
+
+class AllModelsResponse(BaseModel):
+    items: List[ModelsByProviderResponse]
+
 class FileAttachment(BaseModel):
     filename: str
     mimetype: str
@@ -54,11 +111,15 @@ class ChatCreate(BaseModel):
     title: Optional[str] = "New Chat"
     first_message: Optional[str] = None
     files: Optional[List[int]] = []
+    provider_id: Optional[int] = None
+    model_id: Optional[int] = None
 
 class ChatResponse(BaseModel):
     id: int
     title: str
     created_at: datetime
+    provider_id: Optional[int] = None
+    model_id: Optional[int] = None
     messages: List[MessageResponse] = []
 
     class Config:
@@ -86,13 +147,20 @@ class QueryRequest(BaseModel):
     model: Optional[str] = None
     chat_id: Optional[int] = None
     files: Optional[List[int]] = []
+    provider_id: Optional[int] = None
+    model_id: Optional[int] = None
 
 class ChatQueryRequest(BaseModel):
     message: str
     model: Optional[str] = None
     files: Optional[List[int]] = []
+    provider_id: Optional[int] = None
+    model_id: Optional[int] = None
 
 class StreamResponse(BaseModel):
     role: str = "assistant"
     content: str = ""
     done: bool = False
+
+class SystemPromptUpdate(BaseModel):
+    prompt: str

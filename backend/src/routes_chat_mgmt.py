@@ -53,6 +53,7 @@ async def create_chat(request: Request, data: ChatCreate, db: AsyncSession = Dep
     chat = Chat(
         user_id=user.id,
         title=data.title or "New Chat",
+        project_id=data.project_id,
         provider_id=data.provider_id,
         model_id=data.model_id,
     )

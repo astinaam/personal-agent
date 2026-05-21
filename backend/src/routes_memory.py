@@ -2,19 +2,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from fastapi import APIRouter, Depends, HTTPException, Request
 from .database import get_db
-from .models import Memory
+from .models import Memory, Chat
 from .dependencies import get_user_from_request
 from .schemas import MemoryCreate, MemoryResponse
-from typing import List
+from typing import List, Optional
 
 router = APIRouter()
 
 @router.get("/memories", response_model=List[MemoryResponse])
-async def list_memories(request: Request, db: AsyncSession = Depends(get_db)):
+async def list_memories(request: Request, project_id: Optional[int] = None, db: AsyncSession = Depends(get_db)):
     user = await get_user_from_request(request, db)
+    conditions = [Memory.user_id == user.id]
+    if project_id is not None:
+        conditions.append(Memory.project_id == project_id)
+    else:
+        conditions.append(Memory.project_id == None)
     result = await db.execute(
         select(Memory)
-        .where(Memory.user_id == user.id)
+        .where(*conditions)
         .order_by(desc(Memory.importance), desc(Memory.created_at))
     )
     return result.scalars().all()
@@ -24,6 +29,7 @@ async def create_memory(request: Request, data: MemoryCreate, db: AsyncSession =
     user = await get_user_from_request(request, db)
     mem = Memory(
         user_id=user.id,
+        project_id=data.project_id,
         content=data.content,
         category=data.category,
         importance=data.importance,
@@ -46,6 +52,8 @@ async def update_memory(memory_id: int, request: Request, data: MemoryCreate, db
     mem.content = data.content
     mem.category = data.category
     mem.importance = data.importance
+    if data.project_id is not None:
+        mem.project_id = data.project_id
     await db.commit()
     return mem
 

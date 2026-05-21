@@ -41,6 +41,13 @@ export const api = {
     deleteModel: (providerId, modelId) => request(`/providers/${providerId}/models/${modelId}`, { method: 'DELETE' }),
     test: (id) => request(`/providers/${id}/test`, { method: 'POST' })
   },
+  projects: {
+    list: () => request('/projects'),
+    create: (data) => request('/projects', { method: 'POST', body: data }),
+    update: (id, data) => request(`/projects/${id}`, { method: 'PATCH', body: data }),
+    delete: (id) => request(`/projects/${id}`, { method: 'DELETE' }),
+    chats: (id) => request(`/projects/${id}/chats`)
+  },
   models: {
     list: () => request('/models'),
     refreshOpenRouter: () => request('/models/refresh', { method: 'POST' })
@@ -55,7 +62,7 @@ export const api = {
     query: (data) => request('/query', { method: 'POST', body: data })
   },
   memories: {
-    list: () => request('/memories'),
+    list: (projectId) => request(`/memories${projectId !== undefined && projectId !== null ? `?project_id=${projectId}` : ''}`),
     create: (data) => request('/memories', { method: 'POST', body: data }),
     update: (id, data) => request(`/memories/${id}`, { method: 'PATCH', body: data }),
     delete: (id) => request(`/memories/${id}`, { method: 'DELETE' })

@@ -90,6 +90,7 @@ export default function ChatPage() {
         chat_id,
         provider_id: selectedProvider?.id,
         model_id: selectedModel?.id,
+        project_id: selectedProject?.id,
         files: allFiles.map(f => f.id || f.filename)
       }
       const res = await api.messages.query(body)

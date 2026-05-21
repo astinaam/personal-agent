@@ -6,6 +6,7 @@ from .models import User
 from .dependencies import get_user_from_request
 from .auth import hash_password, verify_password, create_access_token, get_user_by_email
 from .schemas import UserCreate, UserResponse, UserSettings, Token
+from .routes_projects import get_or_create_global_project
 
 router = APIRouter()
 
@@ -22,6 +23,8 @@ async def register(data: UserCreate, db: AsyncSession = Depends(get_db)):
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    # Create global project for new user
+    await get_or_create_global_project(db, user.id)
     token = create_access_token({"sub": user.email})
     return {"token": token, "user": UserResponse(id=user.id, email=user.email, created_at=user.created_at, default_model=user.default_model)}
 

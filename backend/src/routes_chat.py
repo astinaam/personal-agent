@@ -51,6 +51,7 @@ async def query(request: Request, req: dict, db: AsyncSession = Depends(get_db))
             user_id=user.id,
             provider_id=provider.id,
             model_id=model.id,
+            project_id=req.get("project_id"),
             title=message[:40] + "..." if len(message) > 40 else message
         )
         db.add(chat)
@@ -63,14 +64,13 @@ async def query(request: Request, req: dict, db: AsyncSession = Depends(get_db))
         if not chat:
             raise HTTPException(status_code=404, detail="Chat not found")
         chat_id = chat.id
-        # update chat provider/model if changed
         if chat.provider_id != provider.id:
             chat.provider_id = provider.id
         if chat.model_id != model.id:
             chat.model_id = model.id
         await db.commit()
 
-    memories = await get_relevant_memories(db, user.id, message)
+    memories = await get_relevant_memories(db, user.id, message, project_id=chat.project_id)
     memory_ctx = await build_memory_context(memories)
     system_prompt = await get_system_prompt(db)
 

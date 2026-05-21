@@ -113,6 +113,7 @@ class ChatCreate(BaseModel):
     files: Optional[List[int]] = []
     provider_id: Optional[int] = None
     model_id: Optional[int] = None
+    project_id: Optional[int] = None
 
 class ChatResponse(BaseModel):
     id: int

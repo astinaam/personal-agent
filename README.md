@@ -44,13 +44,13 @@ docker compose up --build
 
 ### 3. Access
 
-- **Web UI**: http://localhost:3000
-- **API**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs
+- **Web UI**: http://localhost:3001
+- **API**: http://localhost:8001
+- **API Docs**: http://localhost:8001/docs
 
 ### 4. First use
 
-1. Open http://localhost:3000
+1. Open http://localhost:3001
 2. Sign up with any email/password
 3. Go to **Settings** (gear icon) → add your OpenAI/Anthropic/DeepSeek API key
 4. Start chatting!
@@ -68,7 +68,7 @@ pip install -r requirements.txt
 # Start PostgreSQL locally (or use docker run postgres:16)
 # Then:
 cp ../.env.local .env
-uvicorn src.main:app --reload --port 8000
+uvicorn src.main:app --reload --port 8001
 ```
 
 ### Frontend

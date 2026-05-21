@@ -10,8 +10,12 @@ NEW_COLUMNS = [
         ("telegram_model_id", "INTEGER"),
     ]),
     ("chats", [
+        ("project_id", "INTEGER"),
         ("provider_id", "INTEGER"),
         ("model_id", "INTEGER"),
+    ]),
+    ("memories", [
+        ("project_id", "INTEGER"),
     ]),
 ]
 

@@ -38,6 +38,21 @@ class ProviderModel(Base):
 
     provider = relationship("Provider", back_populates="models")
 
+class Project(Base):
+    __tablename__ = "projects"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String, nullable=False)
+    slug = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    is_global = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="projects")
+    chats = relationship("Chat", back_populates="project")
+    memories = relationship("Memory", back_populates="project")
+
 class User(Base):
     __tablename__ = "users"
 
@@ -58,18 +73,21 @@ class User(Base):
     chats = relationship("Chat", back_populates="user", cascade="all, delete")
     memories = relationship("Memory", back_populates="user", cascade="all, delete")
     providers = relationship("Provider", back_populates="user", foreign_keys="Provider.user_id")
+    projects = relationship("Project", back_populates="user", cascade="all, delete")
 
 class Chat(Base):
     __tablename__ = "chats"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
     provider_id = Column(Integer, ForeignKey("providers.id"), nullable=True)
     model_id = Column(Integer, ForeignKey("provider_models.id"), nullable=True)
     title = Column(String, default="New Chat")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="chats")
+    project = relationship("Project", back_populates="chats")
     messages = relationship("Message", back_populates="chat", cascade="all, delete", order_by="Message.created_at")
 
 class Message(Base):
@@ -92,6 +110,7 @@ class Memory(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
     content = Column(Text, nullable=False)
     category = Column(String, default="general")
     importance = Column(Float, default=1.0)
@@ -99,6 +118,7 @@ class Memory(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="memories")
+    project = relationship("Project", back_populates="memories")
 
 class SystemConfig(Base):
     __tablename__ = "system_configs"

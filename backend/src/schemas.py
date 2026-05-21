@@ -125,14 +125,41 @@ class ChatResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class ProjectCreate(BaseModel):
+    name: str
+    slug: str
+    description: Optional[str] = None
+
+class ProjectUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+class ProjectResponse(BaseModel):
+    id: int
+    user_id: int
+    name: str
+    slug: str
+    description: Optional[str] = None
+    is_global: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class ProjectListResponse(BaseModel):
+    items: List[ProjectResponse]
+
 class MemoryCreate(BaseModel):
     content: str
     category: str = "general"
     importance: float = 1.0
     source: str = "manual"
+    project_id: Optional[int] = None
 
 class MemoryResponse(BaseModel):
     id: int
+    user_id: int
+    project_id: Optional[int] = None
     content: str
     category: str
     importance: float
